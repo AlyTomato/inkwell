@@ -21,7 +21,7 @@ A user opens the Inkwell app on their phone, points the camera at a handwritten 
 
 1. **Given** a photo of a handwritten page with a highlighted sentence, **When** the user triggers capture, **Then** the OCR output identifies the highlighted passage separately from unhighlighted text.
 2. **Given** a photo containing struck-through words, **When** OCR completes, **Then** the struck-through words are flagged as deleted/annotated, not silently discarded.
-3. **Given** a photo with a small doodle in the margin, **When** OCR completes, **Then** the output includes a doodle indicator noting its approximate location on the page.
+3. *(Deferred post-MVP)* Doodle detection in OCR output is not required for MVP. The `doodles` field will be present but always empty.
 4. **Given** an OCR result with an incorrect word, **When** the user taps to correct it, **Then** the correction is applied to the structured result and the correction is recorded as a calibration signal.
 5. **Given** the user submits an empty or completely illegible photo, **When** OCR attempts to process it, **Then** the app surfaces a clear error and prompts the user to retry.
 
@@ -87,7 +87,7 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 - **FR-002**: OCR output MUST include the full transcribed text of the entry.
 - **FR-003**: OCR output MUST identify highlighted passages as a distinct annotation type, preserving their position relative to the surrounding text.
 - **FR-004**: OCR output MUST identify struck-through text as a distinct annotation type (not discarded or merged with normal text).
-- **FR-005**: OCR output MUST indicate the presence and approximate page location of non-text marks (doodles/drawings).
+- **FR-005**: OCR output MUST include a `doodles` array as a reserved top-level field alongside `text`, `formatting`, and `symbols`. For MVP this field always returns an empty array. Detection and embedding of doodle regions is deferred post-MVP. The field MUST be present in the output contract from day one to avoid a breaking schema change when doodle support ships.
 - **FR-006**: OCR output MUST preserve structural information: paragraph breaks, indentation levels, and section spacing.
 - **FR-007**: Users MUST be able to review and make inline corrections to OCR output before confirming publication.
 - **FR-008**: The app MUST record every user correction as a calibration feedback signal tied to the user's profile.
@@ -99,8 +99,10 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 - **FR-010**: The calibration onboarding flow MUST collect between 3 and 5 handwriting samples via camera capture.
 - **FR-011**: Users MUST be able to skip remaining calibration samples after completing the minimum of 3.
 - **FR-012**: Calibration completion state MUST be persisted across sessions so returning users are not re-prompted.
-- **FR-013**: The calibration model MUST update progressively as the user submits post-capture corrections.
-- **FR-014**: The calibration model MUST be stored on-device using browser IndexedDB. No server-side sync is required for MVP. Cross-device calibration portability is explicitly deferred to v2.
+- **FR-013**: Post-capture corrections MUST be recorded and applied to subsequent OCR calls. Both text corrections (misread word → correct word) and formatting corrections (misclassified annotation type) MUST be supported.
+- **FR-013a**: On completion of onboarding sample collection, the app MUST perform a blocking handwriting analysis call that produces a `HandwritingProfile` describing the user's character confusion patterns and formatting mark conventions. This profile MUST be included in all subsequent OCR calls. If the analysis call fails, the app MUST auto-retry up to 3 times with exponential backoff (2s, 4s, 8s delays). If all retries fail, the user MUST be offered both "Try again" and "Skip for now" options. Skipping proceeds without a HandwritingProfile; OCR falls back to corrections-only hints.
+- **FR-013b**: The onboarding analysis MUST automatically generate seed corrections by diffing OCR output against the known prompt text for each sample, pre-populating the corrections list before the user has made any manual corrections.
+- **FR-014**: The calibration model (HandwritingProfile + corrections) MUST be stored on-device using browser IndexedDB. No server-side sync is required for MVP. Cross-device calibration portability is explicitly deferred to v2.
 
 **Notion Integration**
 
@@ -108,7 +110,7 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 - **FR-016**: The Notion page MUST represent the entry's text using native Notion paragraph blocks.
 - **FR-017**: Highlighted passages MUST be represented in the Notion page as a visually distinct block type (e.g., callout block) rather than merged with surrounding text.
 - **FR-018**: Struck-through text MUST be represented in the Notion page in a way that preserves its "annotated/deleted" meaning.
-- **FR-019**: Doodle regions MUST be cropped from the captured photo and embedded as Notion image blocks at the position they appear in the entry flow. The OCR output MUST include the bounding coordinates of each detected doodle region to enable cropping. Text callouts or property flags are not sufficient — the actual drawing MUST be preserved in Notion.
+- **FR-019**: *(Deferred post-MVP — see Deferred Features.)* Doodle region detection, cropping, and Notion image block embedding are not part of the MVP. The `doodles` field is reserved in the OCR output contract (FR-005) but always returns an empty array in MVP.
 - **FR-020**: The app MUST use AI to extract themes and named entities from each confirmed entry.
 - **FR-021**: Extracted themes and entities MUST be applied to the Notion page as a multi-select tag property.
 - **FR-022**: On each publish, the app MUST query existing Notion pages and identify topically related entries.
@@ -123,9 +125,9 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 
 ### Key Entities
 
-- **Journal Entry**: A single captured page — contains raw OCR text, formatting annotations (highlights, strikethroughs, structural markers, doodle indicators), a reserved `symbols` array (empty in MVP, populated post-MVP by Editorial Marks Intelligence), capture timestamp, calibration feedback applied, and publication status.
+- **Journal Entry**: A single captured page — contains raw OCR text, formatting annotations (highlights, strikethroughs, structural markers), reserved `doodles` and `symbols` arrays (both empty in MVP), capture timestamp, calibration feedback applied, and publication status.
 - **Formatting Annotation**: A structured mark on an entry — type (highlight / strikethrough / doodle / structural), position reference (character range or page region), and any associated content.
-- **Calibration Profile**: A per-user record of writing samples and correction history used to improve OCR accuracy; versioned across sessions.
+- **Calibration Profile**: A per-user on-device record containing: handwriting samples from onboarding, a `HandwritingProfile` (character confusion patterns and formatting mark conventions generated by one-time analysis), and an ongoing correction history. Sent with every OCR call to personalize accuracy. Versioned across sessions.
 - **Notion Page**: The published representation of a Journal Entry in the user's Notion workspace — content blocks, tag properties, relation links.
 - **Tag**: An AI-extracted theme or named entity applied to a Journal Entry as a Notion page property.
 - **Entry Relation**: A link between two Notion pages created based on topical similarity between their entries.
@@ -142,7 +144,7 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 - **SC-004**: Auto-tagging produces at least 1 relevant theme or entity for 95% of entries containing 3 or more sentences.
 - **SC-005**: Entry-to-entry relation linking correctly identifies at least 1 topically related existing entry in 80% of cases where a related entry exists (corpus of ≥ 5 entries).
 - **SC-006**: At least 80% of users who begin the calibration onboarding flow complete it (completion rate).
-- **SC-007**: Users who complete calibration and submit at least 10 post-capture corrections see measurable OCR accuracy improvement over their uncalibrated baseline.
+- **SC-007**: Users who complete calibration onboarding see measurable OCR accuracy improvement on their first real capture compared to an uncalibrated baseline, due to the HandwritingProfile and auto-seeded corrections from onboarding. Users who additionally submit at least 10 post-capture corrections see further measurable improvement.
 - **SC-008**: Zero data loss — if the Notion publish step fails, 100% of confirmed OCR results are recoverable by the user without re-capturing.
 
 ---
@@ -152,15 +154,34 @@ After reviewing and confirming an OCR result, the user publishes the entry. The 
 - Users have a Notion account and are willing to grant Inkwell write access to a designated journal database.
 - Users are operating on a modern smartphone (iOS 16+ / Android 12+) with a functional rear camera.
 - Lighting conditions at capture time are reasonably adequate — extreme low-light enhancement is deferred post-MVP.
-- The Inkwell app manages Notion database schema setup on first publish (creates required properties if absent).
+- The Inkwell app creates the Inkwell Journal database at the workspace root on first publish with no user input. The resulting database ID is stored in IndexedDB and reused for all subsequent publishes. If the stored ID returns a 404 (database deleted), Inkwell re-bootstraps.
 - Entry relation detection is based on semantic/topical similarity between the new entry's content and existing page content — the specific matching mechanism is a planning-phase decision.
 - Cross-device calibration sync is desirable but not required for MVP; single device/browser scope is acceptable.
 - The MVP is single-user only; multi-user and shared-notebook features are deferred.
 - Users have sufficient internet connectivity for OCR, AI tagging, and Notion API calls; full offline-first capture queuing is deferred.
 - Calibration data (handwriting samples and correction history) is stored on-device only — it never leaves the user's device in MVP. Cross-device sync is a v2 concern.
-- Doodle image regions require cropping from the original capture photo — the app retains the full-resolution capture photo in temporary storage until the entry is published and all image blocks are uploaded to Notion.
+- The app does not retain the full-resolution capture photo beyond the OCR call. Doodle cropping is deferred post-MVP.
 
 ## Deferred Features
+
+### Doodle Detection & Embedding *(post-MVP)*
+
+Inkwell will eventually detect non-text drawn marks on journal pages, crop their bounding regions from the captured photo, upload them to an image host, and embed them as Notion image blocks at the correct position in the entry's block sequence.
+
+**What is reserved in MVP**:
+- The `doodles` array is a reserved top-level field in `OCROutput` (FR-005), always `[]` for MVP. This prevents a breaking schema change when doodle support ships.
+- The `DoodleRegion` type is defined in the data model and contracts, but instances are never produced in MVP.
+
+**What ships post-MVP**:
+- OCR prompt updated to detect and return bounding boxes for non-text marks
+- Canvas-based cropping of doodle regions from the capture photo
+- Image hosting for cropped doodle uploads (Vercel Blob or equivalent)
+- Notion image blocks for each `DoodleRegion`, interleaved in reading order
+- `Has Doodles` Notion database property
+
+**Prerequisite**: Doodle support requires the core capture-and-publish pipeline to be stable. The `doodles: []` reservation ensures no migration is needed when it activates.
+
+---
 
 ### Editorial Marks Intelligence *(post-MVP)*
 
@@ -205,8 +226,15 @@ The on-device calibration system (FR-014, IndexedDB) should be extended in a fut
 
 ## Clarifications
 
+### Session 2026-04-11
+
+- Q: Where in the Notion workspace should the Inkwell Journal database be created? → A: Workspace root — no user input required. Database ID (not path) is stored in IndexedDB after first bootstrap and used for all subsequent publishes. Moving or renaming the database in Notion does not break writes. If the stored ID returns a 404, Inkwell re-bootstraps.
+- Q: What happens if the blocking handwriting analysis call fails during onboarding? → A: Auto-retry up to 3 times with brief delays. If all retries fail, surface "Try again" and "Skip for now" options. Skipping proceeds without a HandwritingProfile — OCR falls back to corrections-only calibration hints until the user re-triggers analysis (post-MVP) or accumulates enough manual corrections.
+- Q: When is PendingEntry created relative to the OCR call? → A: Before the OCR call. PendingEntry is written to IndexedDB immediately after capture with `status: 'ocr_failed'` as the failure state. If OCR succeeds, status advances to `'awaiting_review'`. If OCR fails, the entry stays in `'ocr_failed'` and the user can retry the OCR call without re-capturing.
+- Q: How should overlapping highlight and strikethrough annotations on the same text range be rendered in the Notion output and review screen? → A: Highlight wins at block level — the passage is rendered as a callout block with the strikethrough applied as a rich text annotation (`annotations: { strikethrough: true }`) within the callout's rich text span. No information is lost: the passage reads as "highlighted and reconsidered."
+
 ### Session 2026-04-10
 
 - Q: Where is the calibration model persisted — on-device, server-side, or Notion? → A: On-device using browser IndexedDB. Cross-device sync deferred to v2.
-- Q: How should doodles be represented in the Notion page? → A: Cropped image regions embedded as Notion image blocks. OCR output must include bounding coordinates for each doodle region to enable cropping before upload.
+- Q: How should doodles be represented in the Notion page? → A: *(Updated 2026-04-11)* Doodle detection and embedding descoped from MVP. The `doodles` field is reserved in OCROutput as always `[]`. Full doodle support (detection, crop, upload, Notion image blocks) ships post-MVP. See Deferred Features.
 - Q: (Feature flag) Add Editorial Marks Intelligence as deferred post-MVP feature. → A: Added to Deferred Features section. `symbols` array reserved in OCR output contract as FR-028 (MVP deliverable, always empty array for MVP). Calibration extension to cover symbol conventions noted as future phase work.

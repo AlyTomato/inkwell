@@ -14,9 +14,9 @@ Inkwell is a mobile-first PWA that captures handwritten journal pages via the br
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x (strict mode)
-**Primary Dependencies**: React 19, Vite 6 + vite-plugin-pwa, Dexie.js v4, @notionhq/client, @vercel/blob, Tailwind CSS v4
+**Primary Dependencies**: React 19, Vite 6 + vite-plugin-pwa, Dexie.js v4, @notionhq/client, Tailwind CSS v4
 **AI Provider**: Anthropic `claude-opus-4-6` vision via serverless proxy (`/api/ocr`, `/api/tag`, `/api/link-entries`)
-**Storage**: IndexedDB (Dexie.js) for CalibrationProfile + PendingEntry; Notion API for all entry content; Vercel Blob for doodle image assets
+**Storage**: IndexedDB (Dexie.js) for CalibrationProfile + PendingEntry; Notion API for all entry content
 **Testing**: Vitest + React Testing Library (unit/component); Playwright (E2E for auth + Notion publish flows)
 **Target Platform**: PWA — iOS 16+ Safari, Android 12+ Chrome; desktop Chrome/Edge secondary
 **Performance Goals**: Capture-to-publish < 90s end-to-end (SC-001); OCR response < 10s p95; Notion page creation < 3s p95
@@ -83,8 +83,8 @@ src/                              # PWA frontend (React + TypeScript)
 │   ├── capture.tsx               # Main capture screen
 │   └── review.tsx                # OCR review + publish trigger
 ├── services/
-│   ├── ocr.ts                    # POST /api/ocr wrapper; injects calibrationHints
-│   ├── calibration.ts            # CalibrationProfile CRUD + hints serialization
+│   ├── ocr.ts                    # POST /api/ocr wrapper; injects calibrationHints (profile + corrections)
+│   ├── calibration.ts            # CalibrationProfile CRUD + hints serialization + analysis call
 │   ├── notion.ts                 # Notion page creation; block assembly; DB bootstrap
 │   ├── tagging.ts                # POST /api/tag wrapper
 │   └── linking.ts                # POST /api/link-entries wrapper + Notion page fetch
@@ -95,8 +95,8 @@ src/                              # PWA frontend (React + TypeScript)
 │   └── auth.ts                   # NotionAuthToken storage
 ├── lib/
 │   ├── camera.ts                 # getUserMedia / input-capture detection + abstraction
-│   ├── image.ts                  # Canvas-based doodle region cropping
-│   └── auth.ts                   # OAuth initiation + hash-fragment token parsing
+│   ├── image.ts                  # Canvas-based image compression before OCR upload
+│   └── auth.ts                   # OAuth initiation + hash-fragment token parsing + client-side CSRF validation
 └── types/
     └── index.ts                  # OCROutput, FormattingAnnotation, DoodleRegion,
                                   # EditorialSymbol, CalibrationProfile, PendingEntry,
@@ -104,7 +104,7 @@ src/                              # PWA frontend (React + TypeScript)
 
 api/                              # Vercel Edge Functions (serverless proxy)
 ├── ocr.ts                        # POST /api/ocr → Anthropic Messages API
-├── upload-doodle.ts              # POST /api/upload-doodle → Vercel Blob put()
+├── analyze-handwriting.ts        # POST /api/analyze-handwriting → multi-image analysis (onboarding only)
 ├── tag.ts                        # POST /api/tag → Claude tag extraction prompt
 ├── link-entries.ts               # POST /api/link-entries → Claude similarity prompt
 └── auth/
@@ -127,6 +127,52 @@ tests/
 ```
 
 **Structure Decision**: Web application layout with co-located Vercel Edge Functions in `/api/`. This is the standard Vite + Vercel project structure. The frontend (`src/`) and serverless functions (`api/`) share TypeScript types via `src/types/index.ts`. The serverless functions are stateless proxies only — no database, no session storage.
+
+---
+
+## Pre-Implementation Setup
+
+Manual steps required before writing any code. These are one-time account and credential tasks that cannot be automated.
+
+### 1. Anthropic API Key
+
+- Create account at [console.anthropic.com](https://console.anthropic.com)
+- Generate an API key under API Keys
+- Store as `ANTHROPIC_API_KEY` in Vercel env vars (server-only) and `.env.local` for local dev
+- **Cost**: Pay-per-token. A full capture-to-publish cycle costs ~$0.10–0.25 using `claude-opus-4-6`. Budget $10–20 for solo MVP testing.
+
+### 2. Notion OAuth App
+
+- Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) → New integration
+- Set type to **Public** (required — users connect their own workspaces, not just the developer's)
+- Add redirect URIs:
+  - `http://localhost:3000/api/auth/callback` (local dev via `vercel dev`)
+  - `https://<vercel-domain>/api/auth/callback` (add after first Vercel deploy)
+- Copy **Client ID** → store as both `NOTION_CLIENT_ID` (server-only) and `VITE_NOTION_CLIENT_ID` (browser-exposed via Vite — intentional, OAuth client IDs are public)
+- Copy **Client Secret** → store as `NOTION_CLIENT_SECRET` (server-only, never in bundle)
+- **Cost**: Free. Notion API access is included in all Notion plans.
+- **Note**: Public integrations require Notion review before use with arbitrary external workspaces. For personal development and testing, it works immediately without review.
+
+### 3. Vercel Account & Project
+
+- Create account at [vercel.com](https://vercel.com) if needed
+- Run `vercel link` in the repo root, or import `AlyTomato/inkwell` via the Vercel dashboard
+- Set all env vars under Settings → Environment Variables:
+
+| Variable | Source | Server-only? |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic console | Yes |
+| `NOTION_CLIENT_SECRET` | Notion integration | Yes |
+| `NOTION_CLIENT_ID` | Notion integration | Yes |
+| `VITE_NOTION_CLIENT_ID` | Same as `NOTION_CLIENT_ID` | No (Vite bundles it) |
+
+- **Cost**: Free on the Hobby plan. Covers unlimited Edge Function invocations and 100GB bandwidth/month — sufficient for MVP and early beta.
+
+### 4. Local Development
+
+Use `vercel dev` instead of `npm run dev`. This serves both the Vite frontend and the `api/` Edge Functions together on `http://localhost:3000`. Running plain `vite dev` will serve the frontend but all `/api/*` routes will 404.
+
+Copy `.env.local.example` → `.env.local` and fill in credentials before running `vercel dev`.
 
 ---
 

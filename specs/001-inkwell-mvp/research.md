@@ -72,9 +72,11 @@
 
 ---
 
-## 5. Doodle Image Hosting for Notion Image Blocks
+## 5. Doodle Image Hosting for Notion Image Blocks *(deferred post-MVP)*
 
-**Decision**: Vercel Blob (indefinite retention) for MVP doodle image storage.
+**Decision**: Deferred. Doodle detection and embedding have been descoped from MVP (2026-04-11). The research below is retained for when this feature ships.
+
+**Original decision**: Vercel Blob (indefinite retention) for MVP doodle image storage.
 
 **Rationale**: The Notion API's `image` block type supports only `external` URLs — Notion does not expose a file upload API endpoint. Doodle crops must be hosted somewhere before they can be embedded in a Notion page. Vercel Blob provides a simple `put()` API co-located with the serverless functions, generates a stable `blob.vercel-storage.com` URL, and has a generous free tier for small binary assets. Blobs are set to `access: 'public'` with no expiry so Notion image URLs remain valid indefinitely.
 

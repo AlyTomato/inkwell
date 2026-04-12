@@ -19,11 +19,10 @@ On first publish, Inkwell verifies or creates a Notion database with this schema
 | `Captured At` | `date` | ISO 8601 datetime; includes time and timezone |
 | `Tags` | `multi_select` | Options created dynamically as tags are applied; no predefined option list |
 | `Related Entries` | `relation` | Self-referential relation on this database |
-| `Has Doodles` | `checkbox` | `true` if `doodles.length > 0` after OCR |
 | `Word Count` | `number` | Integer; approximate word count of `OCROutput.text` |
 | `Calibration Version` | `number` | Integer; value of `CalibrationProfile.schemaVersion` at capture time |
 
-**Bootstrap contract**: If the `Inkwell Journal` database already exists (detected by querying the user's workspace for databases with this title), Inkwell verifies that all required properties are present. Missing properties are added; existing properties of the wrong type surface an error to the user.
+**Bootstrap contract**: On first publish, Inkwell creates the database at workspace root and stores the resulting database ID in `NotionAuthToken.journalDatabaseId` (IndexedDB). All subsequent publishes use the stored ID directly — no workspace search is performed. If the stored ID returns a 404 (database was deleted by the user), Inkwell re-bootstraps: creates a new database at workspace root and updates the stored ID. Moving or renaming the database in Notion does not affect Inkwell — the ID is permanent.
 
 ---
 
@@ -50,7 +49,6 @@ interface NotionPageWriteInput {
     "Captured At":       { "date": { "start": "<ISO 8601>" } },
     "Tags":              { "multi_select": [{ "name": "tag1" }, { "name": "tag2" }] },
     "Related Entries":   { "relation": [{ "id": "<pageId>" }, ...] },
-    "Has Doodles":       { "checkbox": true },
     "Word Count":        { "number": 142 },
     "Calibration Version": { "number": 1 }
   },
@@ -62,7 +60,7 @@ interface NotionPageWriteInput {
 
 ## Block Structure Contract
 
-Blocks are assembled in reading order, interleaving text paragraphs, highlight callouts, doodle images, and strikethrough text.
+Blocks are assembled in reading order, interleaving text paragraphs, highlight callouts, and strikethrough text. Doodle image blocks are deferred post-MVP.
 
 ### Block Types Used
 
@@ -97,34 +95,29 @@ Blocks are assembled in reading order, interleaving text paragraphs, highlight c
 }
 ```
 
-**Doodle image** (one per `DoodleRegion`, inserted at nearest paragraph boundary):
-```json
-{
-  "type": "image",
-  "image": {
-    "type": "external",
-    "external": { "url": "<DoodleRegion.uploadedUrl>" },
-    "caption": [{ "type": "text", "text": { "content": "Doodle — <pageZone>" } }]
-  }
-}
-```
+**Doodle image** *(deferred post-MVP — not produced in MVP)*:
+When doodle support ships, image blocks will be inserted at the nearest paragraph boundary to the detected `DoodleRegion.pageZone`. See Deferred Features in `spec.md`.
 
 ### Block Assembly Algorithm
 
 ```
 1. Split OCROutput.text into segments at paragraph_break annotation positions
 2. For each segment:
-   a. Scan for highlight annotations overlapping this segment
-      → Extract highlighted sub-strings, replace with callout blocks
-      → Emit remaining text as paragraph block(s)
-   b. Scan for strikethrough annotations overlapping this segment
-      → Apply strikethrough annotation to rich_text spans inline
-   c. After emitting all paragraph blocks for this segment,
-      check if any DoodleRegion.pageZone is 'inline' and falls within this segment's character range
-      → Emit image block immediately after
-3. After all paragraph blocks, emit remaining DoodleRegion image blocks
-   grouped by pageZone (top → before first paragraph, bottom → after last, margins → after last)
+   a. Collect all highlight and strikethrough annotations overlapping this segment
+   b. For each highlight annotation:
+      → Emit a callout block for the highlighted sub-string
+      → If a strikethrough annotation overlaps the same range:
+         apply strikethrough as rich text annotation within the callout
+         (annotations: { strikethrough: true } on the rich_text span)
+         do NOT also emit a separate struck-through paragraph for that range
+      → Emit remaining (non-highlighted) text as paragraph block(s),
+         applying any strikethrough annotations on those spans inline
+   c. If a strikethrough annotation covers text with no overlapping highlight:
+      → Apply as inline rich text annotation on the paragraph block
+3. No doodle image blocks in MVP (doodles array is always [])
 ```
+
+**Annotation precedence rule**: When `highlight` and `strikethrough` overlap, `highlight` governs the block type (callout); `strikethrough` is expressed as rich text within that block. This preserves both signals without duplication.
 
 ---
 
