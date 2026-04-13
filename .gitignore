@@ -10,3 +10,6 @@ dist/
 
 # Vercel
 .vercel/
+
+# Claude Code (local overrides — machine-specific)
+.claude/settings.local.json
