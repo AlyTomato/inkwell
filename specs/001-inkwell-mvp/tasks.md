@@ -2,124 +2,120 @@
 
 **Input**: Design documents from `specs/001-inkwell-mvp/`
 **Prerequisites**: plan.md ✅ spec.md ✅ data-model.md ✅ contracts/ ✅ research.md ✅ quickstart.md ✅
+**Generated**: 2026-04-13
 
-**Tests**: Not requested in spec. Test tasks omitted. Integration and E2E test scaffolding included in Polish phase.
+**Tests**: Not requested in spec — test tasks omitted. E2E scaffolding included in Polish phase.
 
 **Organization**: Tasks grouped by user story to enable independent implementation and testing.
 
-## Format: `[ID] [P?] [Story] Description`
+## Format: `[ID] [P?] [Story?] Description with file path`
 
-- **[P]**: Can run in parallel (different files, no incomplete task dependencies)
-- **[Story]**: Which user story this task belongs to (US1, US2, US3)
-
----
-
-## Phase 1: Setup (Shared Infrastructure)
-
-**Purpose**: Initialize the Vite + React PWA project and configure all tooling before any feature work begins.
-
-- [ ] T001 Scaffold Vite 6 + React 19 + TypeScript 5 project at repo root with `npm create vite@latest . -- --template react-ts`
-- [ ] T002 [P] Install all dependencies: `dexie@4`, `@notionhq/client`, `react-router-dom@7`, `tailwindcss@4`, `vite-plugin-pwa`, `workbox-*`
-- [ ] T003 [P] Configure TypeScript strict mode in `tsconfig.json` and `tsconfig.app.json`
-- [ ] T004 [P] Configure Tailwind CSS v4 in `vite.config.ts` and `src/index.css`
-- [ ] T005 [P] Configure `vite-plugin-pwa` in `vite.config.ts`: `display: standalone`, `scope: /`, `start_url: /`
-- [ ] T006 [P] Create `public/manifest.json` with PWA metadata (name "Inkwell", short_name, theme_color, placeholder icons)
-- [ ] T007 [P] Install and configure Vitest + React Testing Library in `vite.config.ts` and `src/setupTests.ts`
-- [ ] T008 [P] Install and configure Playwright in `playwright.config.ts`
-- [ ] T009 Create `vercel.json` with Edge Function routing for all `api/` routes and set `functions.runtime` to `edge`; document all required env vars in `.env.local.example` (`VITE_NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`, `ANTHROPIC_API_KEY`)
+- **[P]**: Can run in parallel (different files, no incomplete-task dependencies)
+- **[Story]**: Which user story this task belongs to ([US1], [US2], [US3])
+- No story label on Setup, Foundational, or Polish phase tasks
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 1: Setup
 
-**Purpose**: Shared types, IndexedDB schema, routing shell, and camera abstraction that every user story depends on. No user story work begins until this phase is complete.
+**Purpose**: Scaffold the project, install dependencies, configure tooling. No application logic.
 
-**⚠️ CRITICAL**: All of Phase 2 must be complete before any Phase 3+ work.
+- [ ] T001 Scaffold Vite 6 + React 19 + TypeScript 5 project at repo root: run `npm create vite@latest . -- --template react-ts`; delete the generated `src/App.css` and `src/assets/` boilerplate
+- [ ] T002 Install all runtime dependencies: `npm install react-router-dom@7 dexie@4 @notionhq/client`; install devDependencies: `vitest @vitest/ui @testing-library/react @testing-library/user-event jsdom playwright @playwright/test`; install `tailwindcss@4 vite-plugin-pwa`
+- [ ] T003 [P] Configure TypeScript strict mode in `tsconfig.json` and `tsconfig.app.json`: set `"strict": true`, `"target": "ES2022"`, `"moduleResolution": "bundler"`, `"baseUrl": "."`, `"paths": { "@/*": ["src/*"] }`
+- [ ] T004 [P] Configure Tailwind CSS v4 in `src/index.css`: replace file contents with `@import "tailwindcss"`; confirm `src/main.tsx` imports `src/index.css`
+- [ ] T005 [P] Configure `vite-plugin-pwa` in `vite.config.ts`: add `VitePWA({ registerType: 'autoUpdate', manifest: false, workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg}'] } })` to plugins; set `server.port: 3000`; add `resolve.alias` mapping `@/` → `src/`
+- [ ] T006 [P] Create `public/manifest.json`: `name: "Inkwell"`, `short_name: "Inkwell"`, `description: "Where pen meets patterns"`, `display: "standalone"`, `start_url: "/"`, `background_color: "#ffffff"`, `theme_color: "#1a1a1a"`, `icons` pointing to `public/icons/icon-192.png` and `public/icons/icon-512.png` (placeholder PNGs added in Polish phase T043)
+- [ ] T007 [P] Create `vercel.json`: set `framework: "vite"`; add `functions: { "api/**/*.ts": { runtime: "edge" } }` to declare all `api/` files as Vercel Edge Functions
+- [ ] T008 [P] Create `.env.local.example` documenting every required environment variable: `ANTHROPIC_API_KEY`, `NOTION_CLIENT_SECRET`, `NOTION_CLIENT_ID`, `VITE_NOTION_CLIENT_ID` (same value as `NOTION_CLIENT_ID`; Vite bundles it into the frontend — intentional, OAuth client IDs are public), `BLOB_READ_WRITE_TOKEN`; add a comment per variable explaining its source (Anthropic console, Notion integration page, Vercel dashboard)
 
-- [ ] T010 Define all shared TypeScript types in `src/types/index.ts`: `OCROutput`, `FormattingAnnotation`, `DoodleRegion`, `EditorialSymbol`, `CalibrationProfile`, `CalibrationSample`, `HandwritingProfile`, `CalibrationCorrection`, `PendingEntry`, `NotionAuthToken` — match data-model.md exactly including `PendingEntry.status` union with `'ocr_pending' | 'ocr_failed' | 'awaiting_review' | 'confirmed' | 'publishing' | 'published' | 'failed'`; note that `PendingEntry.ocrOutput` is `ocrOutput?: OCROutput` (optional — entry is created before OCR completes, so this field is absent until OCR succeeds)
-- [ ] T011 Initialize Dexie.js v4 schema in `src/store/db.ts`: define `AppDatabase` class with tables `calibrationProfiles`, `pendingEntries`, `authTokens`; configure `version(1).stores()` with indexes from data-model.md; export singleton `db` instance
-- [ ] T012 [P] Implement `CalibrationProfile` CRUD in `src/store/calibration.ts`: `getProfile()`, `createProfile()`, `updateProfile()`, `addSample()`, `addCorrection()` (with 200-item FIFO eviction), `setHandwritingProfile()`, `setOnboardingComplete()`
-- [ ] T013 [P] Implement `PendingEntry` CRUD in `src/store/pending.ts`: `createEntry()` (writes immediately with `status: 'ocr_pending'`), `updateStatus()`, `setOcrOutput()`, `setNotionPageId()`, `getFailedEntries()`, `deleteEntry()`; implement `cleanupPublishedEntries()` that deletes entries with `status === 'published'` older than 24h — this function is called on app load (not a background job; PWA has no persistent background execution)
-- [ ] T014 [P] Implement `NotionAuthToken` store in `src/store/auth.ts`: `getToken()`, `storeToken()`, `clearToken()`, `setJournalDatabaseId()` — `NotionAuthToken` shape must include `journalDatabaseId?: string` per contracts/auth.md
-- [ ] T015 Implement React Router v7 routing shell in `src/pages/index.tsx` with two-level auth guard: (1) no token → `/onboarding/auth`; (2) token present + `!completedOnboarding` → `/onboarding/calibration`; (3) otherwise → `/capture`; handle Notion API 401 → clear token → unauthenticated
-- [ ] T016 [P] Implement `ErrorBoundary` component in `src/components/common/ErrorBoundary.tsx` with fallback UI and reset capability
-- [ ] T017 Implement camera abstraction in `src/lib/camera.ts`: feature-detect `ImageCapture` API at runtime; export `captureImage()` that uses `MediaDevices.getUserMedia()` stream on Android/desktop and programmatically triggers `<input type="file" accept="image/*" capture="environment">` on iOS Safari; both paths return `File | Blob`
+---
 
-**Checkpoint**: Routing shell renders, IndexedDB initialises without errors, camera abstraction detects platform correctly.
+## Phase 2: Foundational
+
+**Purpose**: Shared types, IndexedDB schema, auth flow, and routing shell. ALL of this must be complete before any user story begins — the route guard (T016) references `/onboarding/auth`, which requires auth components (T014–T015) to exist.
+
+**⚠️ CRITICAL**: No user story work can begin until this entire phase is complete.
+
+- [ ] T009 Define all shared TypeScript types in `src/types/index.ts`: export `OCROutput` (text, formatting, doodles, symbols), `FormattingAnnotation` (type: `'highlight' | 'strikethrough' | 'paragraph_break' | 'indent'`, startOffset, endOffset, level?), `DoodleRegion` (reserved — defined but never instantiated in MVP), `EditorialSymbol` (reserved — always `[]`), `BoundingBox`, `CalibrationProfile`, `CalibrationSample`, `HandwritingProfile` (characterConfusions, formattingStyle, styleNotes, generatedFromSampleCount, generatedAt), `CalibrationCorrection` (correctionType: `'text' | 'formatting'`, source: `'user_correction' | 'onboarding_diff'`), `PendingEntry` (status union: `'ocr_pending' | 'ocr_failed' | 'awaiting_review' | 'confirmed' | 'publishing' | 'published' | 'failed'`, `ocrOutput?: OCROutput`), `NotionAuthToken` (accessToken, workspaceId, workspaceName, journalDatabaseId?, storedAt), `CalibrationHints`, `OCRRequest`, `OCRResponse`, `OCRError` — all shapes must match `data-model.md` and `contracts/ocr-api.md` exactly
+- [ ] T010 Initialise Dexie v4 schema in `src/store/db.ts`: create `class InkwellDB extends Dexie` with `version(1).stores({ calibrationProfiles: 'id, completedOnboarding', pendingEntries: 'id, status, createdAt', auth: 'id' })`; export singleton `const db = new InkwellDB()`; `CalibrationProfile.id` is always the singleton key `'local'`
+- [ ] T011 [P] Implement `NotionAuthToken` CRUD in `src/store/auth.ts`: export `getToken(): Promise<NotionAuthToken | undefined>`, `setToken(token: NotionAuthToken): Promise<void>`, `clearToken(): Promise<void>`, `setJournalDatabaseId(id: string): Promise<void>` — all operate on the single record in `db.auth` with key `'local'`
+- [ ] T012 [P] Implement `PendingEntry` CRUD + status transitions in `src/store/pending.ts`: export `createEntry(): Promise<PendingEntry>` (writes immediately with `status: 'ocr_pending'`, new UUID, timestamps — no image stored per data-model.md Note), `getEntry(id)`, `updateStatus(id, status)`, `setOcrOutput(id, ocrOutput)`, `setNotionPageId(id, notionPageId)`, `getFailedEntries(): Promise<PendingEntry[]>` (returns entries with status `'failed'` or `'ocr_failed'`), `deleteEntry(id)`, `cleanupPublishedEntries()` (deletes `'published'` entries older than 24 h); status transitions must match the lifecycle diagram in `data-model.md`
+- [ ] T013 [P] Implement `CalibrationProfile` CRUD + sample/correction operations in `src/store/calibration.ts`: export `getProfile()`, `initProfile()` (creates singleton with `id: 'local'`, `completedOnboarding: false`, `sampleCount: 0`, `corrections: []`, `schemaVersion: 1`), `addSample(sample: CalibrationSample)` (increments `sampleCount`), `setHandwritingProfile(profile: HandwritingProfile)`, `addCorrection(correction: CalibrationCorrection)` (enforces FIFO eviction at 200 — splice oldest when adding 201st), `markOnboardingComplete()` (sets `completedOnboarding: true`)
+- [ ] T014 Implement Notion OAuth flow in `src/lib/auth.ts`: export `initiateNotionOAuth(): void` (generates UUID state via `crypto.randomUUID()`, stores in `sessionStorage('oauth_state')`, redirects to `https://api.notion.com/v1/oauth/authorize` with `client_id: import.meta.env.VITE_NOTION_CLIENT_ID`, `redirect_uri`, `response_type: 'code'`, `state`, `owner: 'user'`); export `parseTokenFromHash(): NotionAuthToken | null` (parse `location.hash` for token/workspace/state params, compare state against `sessionStorage`, on mismatch return null, on match clear sessionStorage + clear hash via `history.replaceState` + return token object); export `isAuthenticated(): Promise<boolean>` (checks IndexedDB via `getToken()`)
+- [ ] T015 Implement `GET /api/auth/callback` Vercel Edge Function in `api/auth/callback.ts`: validate `code` and `state` query params (return 400 if missing); POST to `https://api.notion.com/v1/oauth/token` with `client_id`, `client_secret` (env: `NOTION_CLIENT_SECRET`), `grant_type: 'authorization_code'`, `code`, `redirect_uri`; on success redirect to `{origin}/#token=<access_token>&workspace=<workspace_id>&workspace_name=<encoded_name>&state=<state>` (hash never reaches server); on Notion API error redirect to `{origin}/onboarding/auth?error=oauth_failed`; export as Edge Function (`export const config = { runtime: 'edge' }`)
+- [ ] T016 [P] Build `NotionConnect` component + `/onboarding/auth` page: create `src/components/auth/NotionConnect.tsx` with a "Connect to Notion" button that calls `initiateNotionOAuth()`; on mount, check `location.hash` — if token params present call `parseTokenFromHash()`, on valid token call `setToken()` then navigate to `/onboarding/calibration`; on null (CSRF fail) or `?error=oauth_failed` show error state with retry button; create `src/pages/onboarding/auth.tsx` that renders `<NotionConnect />`
+- [ ] T017 [P] Create `ErrorBoundary` component in `src/components/common/ErrorBoundary.tsx`: React class component, catches render errors, renders fallback with error message and "Reload app" button that calls `window.location.reload()`; export as default
+- [ ] T018 Set up React Router v7 app shell in `src/main.tsx` + `src/App.tsx`: define routes — `/` (root guard), `/onboarding/auth`, `/onboarding/calibration`, `/capture`, `/review`; root guard reads `NotionAuthToken` and `CalibrationProfile.completedOnboarding` from IndexedDB and redirects: no token → `/onboarding/auth`; token present but `!completedOnboarding` → `/onboarding/calibration`; both satisfied → `/capture`; wrap router in `<ErrorBoundary>`; create `index.html` with `<div id="root">` if not already present from scaffold
+
+**Checkpoint**: `vercel dev` serves the app. Visiting `/` redirects to `/onboarding/auth`. The NotionConnect page renders. OAuth initiation redirects to Notion's consent screen. Callback handler exchanges the code and redirects back with the token in the hash.
 
 ---
 
 ## Phase 3: User Story 1 — Capture & Formatting-Aware OCR (Priority: P1) 🎯 MVP
 
-**Goal**: User photographs a handwritten page; app returns a structured `OCROutput` with full text, highlight/strikethrough/indent annotations, and reserved empty `doodles`/`symbols` arrays; user reviews and corrects inline; corrections are recorded as `CalibrationCorrection` entries.
+**Goal**: User photographs a handwritten page and receives a structured `OCROutput` with text + formatting annotations (highlights, strikethroughs, paragraph breaks). User reviews the result, makes inline corrections that are saved as calibration signals.
 
-**Independent Test**: Provide a handwritten page photo → verify `OCROutput` contains (a) transcribed text, (b) `formatting[]` with correctly typed annotations at valid character offsets, (c) `doodles: []`, (d) `symbols: []`. Test inline correction: tap word → type replacement → verify `CalibrationCorrection` appended to `CalibrationProfile`. No Notion integration required.
+**Independent Test**: Provide a handwritten journal photo → verify `OCROutput` contains (a) transcribed `text`, (b) `formatting[]` with highlight and strikethrough annotations at correct character offsets, (c) `doodles: []`, (d) `symbols: []`. Make an inline correction → verify `CalibrationCorrection` appended to `CalibrationProfile.corrections`. No Notion integration required.
 
-- [ ] T018 Implement `/api/ocr` Vercel Edge Function in `api/ocr.ts`: accept `OCRRequest` (imageBase64, mimeType, calibrationHints?); build Claude prompt per contracts/ocr-api.md including `<handwriting_profile>` and `<corrections>` XML blocks when hints provided; call Anthropic Messages API with `claude-opus-4-6`; return `OCRResponse` or typed `OCRError`; validate `Authorization` header present; enforce 5MB image size limit
-- [ ] T019 [P] [US1] Implement image compression utility in `src/lib/image.ts`: `compressForOcr(file: File | Blob): Promise<string>` — use Canvas API to resize and re-encode as JPEG targeting ≤3.5MB raw (≤5MB base64); preserve aspect ratio; return base64 string with mimeType
-- [ ] T020 [US1] Implement OCR service in `src/services/ocr.ts`: `runOcr(imageFile, calibrationHints?)` — compress image via `image.ts`, POST to `/api/ocr` with Notion Bearer token in `Authorization` header, return `OCROutput`; handle all `OCRError` codes with typed errors
-- [ ] T021 [P] [US1] Implement `CameraCapture` component in `src/components/capture/CameraCapture.tsx`: render adaptive capture UI using `camera.ts` abstraction; show viewfinder on Android/desktop (`getUserMedia` stream); show native camera trigger on iOS; on capture, call `compressForOcr` and emit compressed image blob to parent; handle camera permission denial with user-facing error
-- [ ] T022 [US1] Implement capture page in `src/pages/capture.tsx`: on image captured — (1) call `pending.createEntry()` immediately (status `'ocr_pending'`); (2) call `image.compressForOcr()` to compress the image before sending; (3) call `ocr.runOcr(compressedImage)`; (4) on success: `pending.setOcrOutput()` + `updateStatus('awaiting_review')` + navigate to `/review/:entryId`; (5) on OCR failure: `updateStatus('ocr_failed')` + show retry UI (no re-capture needed); render `CameraCapture`
-- [ ] T023 [US1] Implement `OcrReviewScreen` in `src/components/capture/OcrReviewScreen.tsx`: render transcribed text with formatting annotations visually indicated (highlight passages in yellow, strikethrough text with line); support **text correction**: tap any word → inline input replaces it → on submit record `CalibrationCorrection` (`correctionType: 'text'`); support **formatting correction**: tap annotation label → popover to change type → record `CalibrationCorrection` (`correctionType: 'formatting'`); show "Publish to Notion" CTA
-- [ ] T024 [US1] Implement calibration correction recording in `src/services/calibration.ts`: `recordTextCorrection(entryId, original, corrected, context)` and `recordFormattingCorrection(entryId, detected, actual, passageText)` — both call `store/calibration.addCorrection()` with correct `source: 'user_correction'`; export `serializeCalibrationHints(profile): CalibrationHints` — returns `handwritingProfile` (if present) + last 10 corrections by `appliedAt` desc. **Note**: T027 (US2) updates `serializeCalibrationHints()` to add the stripped wire-format shape for `handwritingProfile`; T030 adds `analyzeHandwriting()`; T032 integrates hints into the OCR call — all touch this file sequentially
-- [ ] T025 [US1] Implement review page in `src/pages/review.tsx`: load `PendingEntry` by route param; render `OcrReviewScreen`; on "Publish" tap: `updateStatus('confirmed')` then trigger publish flow (stubbed for now — will be fully wired in US3); handle entry not found
+- [ ] T019 [P] [US1] Implement camera abstraction in `src/lib/camera.ts`: export `getCaptureMethod(): 'getUserMedia' | 'inputCapture'` (feature-detects `ImageCapture` support at runtime — if `typeof ImageCapture !== 'undefined'` → `getUserMedia`, else → `inputCapture`); export `captureViaUserMedia(): Promise<Blob>` (requests `{ video: { facingMode: 'environment' } }` stream, grabs frame to offscreen canvas, returns JPEG blob, stops stream tracks after capture); export `createInputCapture(): HTMLInputElement` (returns `<input type="file" accept="image/*" capture="environment">` for iOS Safari); both paths produce a `Blob` compatible with `compressImage()`
+- [ ] T020 [P] [US1] Implement canvas-based image compression in `src/lib/image.ts`: export `compressImage(blob: Blob, maxBytes?: number): Promise<{ base64: string; mimeType: 'image/jpeg' }>` — draw image to offscreen canvas, scale down iteratively while `base64.length > maxBytes * 1.37` (base64 overhead factor), export as JPEG at quality 0.85; default `maxBytes` is 3_750_000 (~5 MB base64); throw `new Error('image_too_large')` if still over limit after scaling to 20% of original
+- [ ] T021 [P] [US1] Implement `POST /api/ocr` Vercel Edge Function in `api/ocr.ts`: parse `OCRRequest` body (imageBase64, mimeType, calibrationHints?); validate `Authorization` header present (return 401 `{ error: 'unauthorized' }`); validate `imageBase64.length ≤ 5_000_000` (return 400 `{ error: 'image_too_large', retryable: false }`); construct system prompt and user message per `contracts/ocr-api.md` Claude prompt contract — inject `<handwriting_profile>` block if `calibrationHints.handwritingProfile` present, inject `<corrections>` block if `calibrationHints.recentCorrections` non-empty; call Anthropic Messages API with model `claude-opus-4-6`, image block + text; parse JSON response as `OCROutput`; if `ocrOutput.text` is empty return 422 `{ error: 'illegible_image', retryable: false }`; on Anthropic API error return 502 `{ error: 'provider_error', retryable: true }`; return `{ ocrOutput, modelUsed: 'claude-opus-4-6', processingMs }` on success; `export const config = { runtime: 'edge' }`
+- [ ] T022 [US1] Implement OCR service in `src/services/ocr.ts`: export `runOcr(blob: Blob, pendingEntryId: string): Promise<OCROutput>` — call `compressImage(blob)`, call `getProfile()` to read calibration hints (build `CalibrationHints` with `handwritingProfile` if present + last 10 corrections by `appliedAt` desc), read auth token for Bearer header, POST to `/api/ocr`; on success call `setOcrOutput(pendingEntryId, ocrOutput)` + `updateStatus(pendingEntryId, 'awaiting_review')` + return `ocrOutput`; on failure call `updateStatus(pendingEntryId, 'ocr_failed')` + throw typed `OCRError`
+- [ ] T023 [US1] Build `CameraCapture` component in `src/components/capture/CameraCapture.tsx`: on mount call `getCaptureMethod()`; if `'getUserMedia'` render live `<video>` preview (stream from `navigator.mediaDevices.getUserMedia`) with circular shutter button; if `'inputCapture'` render a styled full-screen tap area that programmatically clicks the hidden `<input capture>` element on tap; on image captured: (1) call `createEntry()` — writes `PendingEntry` with status `'ocr_pending'` BEFORE any API call (zero data loss guarantee); (2) call `runOcr(blob, entry.id)`; (3) on success navigate to `/review?id={entry.id}`; (4) on `ocr_failed` show retry button and call `runOcr` again with the same blob held in component state (no re-capture needed); on `image_too_large` show "Photo too large — try moving closer or in better lighting"; on camera permission denied show "Camera access required — check browser settings"
+- [ ] T024 [US1] Build `OcrReviewScreen` component in `src/components/capture/OcrReviewScreen.tsx`: accept `entry: PendingEntry` as prop; render `ocrOutput.text` as a content-editable-like view with formatting visually applied (highlight spans use `bg-yellow-200`, strikethrough spans use `line-through`); **text correction**: tap any word → inline `<input>` replaces it → on blur/Enter: update `ocrOutput.text` in the entry via `setOcrOutput()`, append `CalibrationCorrection` (`correctionType: 'text'`, original, corrected, surroundingContext: 20 chars each side, source: `'user_correction'`) via `addCorrection()`; **formatting correction**: tap annotation label → popover with type options → on change: re-emit updated `ocrOutput` + append `CalibrationCorrection` (`correctionType: 'formatting'`) via `addCorrection()`; "Confirm & Publish" button calls `updateStatus(entry.id, 'confirmed')` and invokes `onConfirmed` prop callback
+- [ ] T025 [US1] Build capture page in `src/pages/capture.tsx`: auth-guard (redirect to `/onboarding/auth` if no token); render `<CameraCapture />`; on mount call `getFailedEntries()` — if any exist render `<PendingEntryBanner />` (component created in T042; import it here, it won't throw if the file is a stub)
+- [ ] T026 [US1] Build review page skeleton in `src/pages/review.tsx`: read `id` from `location.search`; load `PendingEntry` from IndexedDB; if missing or status not in `['awaiting_review', 'confirmed']` redirect to `/capture`; render `<OcrReviewScreen entry={entry} onConfirmed={() => { /* publish wired in T038 (US3) */ setShowPublishPlaceholder(true) }} />`; show "Publish to Notion" placeholder state after confirm (full publish flow wired in Phase 5)
 
-**Checkpoint**: Full capture → OCR → review → correction flow works end-to-end. `PendingEntry` state machine transitions correctly. No Notion integration yet.
+**Checkpoint**: User Story 1 is independently functional. Can photograph a handwritten page, receive structured OCR output, make inline corrections, and verify `CalibrationProfile.corrections` grows in IndexedDB. No Notion publish required.
 
 ---
 
 ## Phase 4: User Story 2 — Handwriting Calibration Onboarding (Priority: P2)
 
-**Goal**: First-time users complete a 3–5 sample onboarding flow; app runs a blocking handwriting analysis that populates `CalibrationProfile.handwritingProfile` and pre-seeds corrections; on failure auto-retries 3 times then offers retry/skip; returning calibrated users skip onboarding. From this point, all OCR calls include the profile.
+**Goal**: First-time users complete a 3–5 sample onboarding flow. The app runs a blocking handwriting analysis that produces `HandwritingProfile` + seed corrections. All subsequent OCR calls include these calibration hints. Returning users bypass onboarding.
 
-**Independent Test**: Complete onboarding with 3 samples → verify `CalibrationProfile.completedOnboarding = true`, `handwritingProfile` is populated (or skipped gracefully), `corrections[]` contains `onboarding_diff` entries. Confirm the next OCR call includes `calibrationHints.handwritingProfile` in the request to `/api/ocr`.
+**Independent Test**: Complete onboarding flow with 3 samples → verify `CalibrationProfile.completedOnboarding === true`, `handwritingProfile` populated with `characterConfusions`, `formattingStyle`, `styleNotes`, and `corrections[]` contains ≥ 1 entry with `source: 'onboarding_diff'`. Then trigger an OCR call and inspect the `/api/ocr` request body — confirm `calibrationHints.handwritingProfile` is present.
 
-- [ ] T026 Implement `/api/analyze-handwriting` Vercel Edge Function in `api/analyze-handwriting.ts`: accept `AnalyzeHandwritingRequest` (array of 3–5 sample images + promptTexts); build multi-image Claude prompt per contracts/ocr-api.md analysis section; call Anthropic Messages API; parse and return `AnalyzeHandwritingResponse` (handwritingProfile + seedCorrections ≤50 items); validate min 3 samples; return typed errors
-- [ ] T027 [P] [US2] Update `serializeCalibrationHints()` in `src/services/calibration.ts` (created in T024) to support the full `CalibrationHints` wire shape: include `handwritingProfile` when present on the profile, stripping `generatedAt` and `generatedFromSampleCount` fields (wire format per contracts/ocr-api.md differs from the stored `HandwritingProfile` type); corrections array already handled in T024 — only the profile branch needs adding here
-- [ ] T028 [P] [US2] Implement `SampleCapture` component in `src/components/calibration/SampleCapture.tsx`: display the prompt text the user should write; render camera trigger using `CameraCapture`; show preview of captured image; emit captured sample (imageBlob + promptText) to parent
-- [ ] T029 [US2] Implement `OnboardingFlow` stepper component in `src/components/calibration/OnboardingFlow.tsx`: manage steps for samples 1–5 using `SampleCapture`; show progress indicator; enable "Skip remaining" button after sample 3 is captured; accumulate samples array; on completion (≥3 samples captured or skip triggered) emit samples array to trigger analysis
-- [ ] T030 [US2] Implement handwriting analysis orchestration in `src/services/calibration.ts`: `analyzeHandwriting(samples)` — POST to `/api/analyze-handwriting`; implement auto-retry (up to 3 attempts, 2s / 4s / 8s backoff); on success: call `store.setHandwritingProfile()` + append `seedCorrections` via `store.addCorrection()` with `source: 'onboarding_diff'`; on all retries exhausted: return `{ success: false }` so UI can offer retry/skip; on skip: call `store.setOnboardingComplete()` without setting profile
-- [ ] T031 [US2] Implement calibration onboarding page in `src/pages/onboarding/calibration.tsx`: render `OnboardingFlow`; on sample collection complete: show "Building your handwriting profile…" blocking screen and call `calibration.analyzeHandwriting()`; on analysis success: `setOnboardingComplete()` + navigate to `/capture`; on failure after retries: show "Try again" button (re-calls `analyzeHandwriting`) and "Skip for now" button (calls `setOnboardingComplete()` without profile + navigate to `/capture`)
-- [ ] T032 [US2] Update `src/services/ocr.ts` `runOcr()` to call `serializeCalibrationHints(profile)` and include result in every OCR request; load `CalibrationProfile` from IndexedDB before each call; `calibrationHints` is omitted (not `{}`) when profile is absent (first-time user before onboarding completes)
+- [ ] T027 [P] [US2] Implement `POST /api/analyze-handwriting` Vercel Edge Function in `api/analyze-handwriting.ts`: parse `AnalyzeHandwritingRequest` (samples array with imageBase64, mimeType, promptText per sample); validate `Authorization` header (401); validate 3–5 samples (return 400 `{ error: 'insufficient_samples' }` if fewer than 3); construct multi-image Anthropic Messages API call per `contracts/ocr-api.md` analysis prompt — all sample images in a single message, ground truth texts listed, instruct Claude to return `{ handwritingProfile, seedCorrections }` JSON concisely within 600 tokens; parse response; validate `seedCorrections.length ≤ 50`; return `AnalyzeHandwritingResponse`; on Anthropic error return 502 `{ error: 'provider_error', retryable: true }`; `export const config = { runtime: 'edge' }`
+- [ ] T028 [US2] Implement calibration analysis service in `src/services/calibration.ts`: export `buildCalibrationHints(profile: CalibrationProfile): CalibrationHints` — returns `{ handwritingProfile: { characterConfusions, formattingStyle, styleNotes } }` (strips `generatedAt` and `generatedFromSampleCount` — wire shape per `contracts/ocr-api.md` differs from stored `HandwritingProfile`) + `recentCorrections`: last 10 corrections by `appliedAt` desc, mapped to wire shape; export `runOnboardingAnalysis(samples: CalibrationSample[]): Promise<void>` — reads auth token, POSTs to `/api/analyze-handwriting`; implements exponential backoff retry: up to 3 attempts with delays 2 s / 4 s / 8 s (use `setTimeout` wrapped in a Promise); on success: call `setHandwritingProfile()` + append each `seedCorrection` via `addCorrection()` with `source: 'onboarding_diff'` + call `markOnboardingComplete()`; on all retries exhausted: throw `{ retryable: true, message: 'Analysis failed after 3 attempts' }` so caller can offer Try Again / Skip; export `skipOnboardingAnalysis(): Promise<void>` — calls `markOnboardingComplete()` without setting `handwritingProfile`
+- [ ] T029 [US2] Update `src/services/ocr.ts` `runOcr()` to inject calibration hints: after loading profile via `getProfile()`, call `buildCalibrationHints(profile)` and include the result as `calibrationHints` in the OCR request body (omit the field entirely — not `{}`  — when profile is absent or `corrections` is empty, to match `OCRRequest.calibrationHints?` contract)
+- [ ] T030 [P] [US2] Build `SampleCapture` component in `src/components/calibration/SampleCapture.tsx`: accept props `promptId: string`, `promptText: string`, `sampleIndex: number`, `totalSamples: number`, `onCaptured: (sample: CalibrationSample) => void`; display the prompt text prominently for the user to handwrite; use `getCaptureMethod()` to render `<video>` shutter or `<input capture>`; on capture call `compressImage(blob, 200_000)` (200 KB target — preserve quality for analysis); call `onCaptured({ id: crypto.randomUUID(), promptId, promptText, imageDataUrl: base64, capturedAt: Date.now() })`; show captured image preview with "Retake" button
+- [ ] T031 [US2] Build `OnboardingFlow` component in `src/components/calibration/OnboardingFlow.tsx`: define 5 hardcoded prompt objects `{ id, text }` (short varied sentences, e.g., "The quick brown fox.", "Today I feel grateful for...", "My goal this week is", "I notice that I often", "One thing I want to remember:"); manage `currentStep` (0–4) and `capturedSamples: CalibrationSample[]` state; render `<SampleCapture>` for the current step; after each capture: call `addSample()` to persist + advance step; once `capturedSamples.length >= 3` show both "Continue to sample {n+1}" and "Start journaling" (skip) buttons; on "Start journaling" or completing all 5: show full-screen blocking `"Building your handwriting profile…"` state with spinner; call `runOnboardingAnalysis(capturedSamples)`; on success navigate to `/capture`; on throw (all retries failed): show "Analysis failed" with "Try again" (re-calls `runOnboardingAnalysis`) and "Skip for now" (calls `skipOnboardingAnalysis()` then navigates to `/capture`)
+- [ ] T032 [US2] Build calibration onboarding page in `src/pages/onboarding/calibration.tsx`: on mount: if `CalibrationProfile.completedOnboarding === true` redirect to `/capture` (returning user guard); if no profile exists call `initProfile()`; render `<OnboardingFlow />`
 
-**Checkpoint**: New user sees onboarding flow, completes 3 samples, analysis runs (or is skipped), `completedOnboarding = true`, subsequent OCR calls include `handwritingProfile` in the request payload.
+**Checkpoint**: First-time user sees onboarding flow, photographs 3 samples, analysis runs (with retry on failure), `completedOnboarding: true` in IndexedDB. Subsequent OCR request bodies include `calibrationHints.handwritingProfile`.
 
 ---
 
 ## Phase 5: User Story 3 — Notion Publishing with Auto-Tagging & Entry Relations (Priority: P3)
 
-**Goal**: User authenticates with Notion via OAuth; on "Publish" the app creates a structured Notion page with formatted blocks (callout for highlights, inline strikethrough, paragraph breaks), applies AI-extracted tags, links topically related existing entries — all in a single atomic API call; failed publishes are recoverable without re-capture.
+**Goal**: After confirming OCR review, user publishes the entry to Notion. A page is created with formatting-preserving blocks (callout for highlights, inline strikethrough), AI-extracted tags as multi-select properties, and relation links to topically related existing entries — all atomically in one API call. Publish failures are surfaced and recoverable without re-capture.
 
-**Independent Test**: Provide a confirmed `PendingEntry` with a highlight and a strikethrough → verify (a) Notion page created in workspace root database with correct block sequence, (b) `Tags` multi-select populated, (c) `Related Entries` relation set (or empty if no corpus), (d) `PendingEntry.status === 'published'`. Test retry: force Notion 503 → verify entry stays in `'failed'` state recoverable from `PendingEntryBanner`.
+**Independent Test**: Provide a `PendingEntry` with `status: 'confirmed'`, `ocrOutput` containing 1 highlight and 1 strikethrough → verify (a) Notion page created in "Inkwell Journal" database, (b) callout block present for highlight, (c) paragraph block with `annotations: { strikethrough: true }` present, (d) `Tags` property populated with ≥ 1 value, (e) `Related Entries` set if ≥ 1 existing page exists. Force a 503 → verify `PendingEntry.status === 'failed'` and entry is recoverable.
 
-- [ ] T033 Implement `/api/auth/callback` Vercel Edge Function in `api/auth/callback.ts`: validate `code` and `state` query params present (400 if missing); POST to `https://api.notion.com/v1/oauth/token` with `client_secret`; redirect to `{origin}/#token=...&workspace=...&workspace_name=...&state=...` echoing `state` back for client-side CSRF validation
-- [ ] T034 [P] [US3] Implement OAuth initiation and client-side CSRF validation in `src/lib/auth.ts`: `initiateNotionOAuth()` — generate UUID state, store in `sessionStorage`, redirect to Notion consent URL; `handleOAuthCallback()` — parse hash fragment, compare `state` vs `sessionStorage`, discard and redirect to `/onboarding/auth` with error on mismatch, call `store/auth.storeToken()` on success, clear hash with `history.replaceState`
-- [ ] T035 [P] [US3] Implement `NotionConnect` screen in `src/components/auth/NotionConnect.tsx`: "Connect to Notion" button calls `initiateNotionOAuth()`; handle `?error=csrf` query param to show CSRF failure message
-- [ ] T036 [US3] Implement onboarding auth page in `src/pages/onboarding/auth.tsx`: render `NotionConnect`; on app load check for hash fragment and call `handleOAuthCallback()` if token params present; navigate to `/onboarding/calibration` on success
-- [ ] T037 [P] [US3] Implement `/api/tag` Vercel Edge Function in `api/tag.ts`: accept `TagRequest` (text: first 2000 chars); call Claude with tagging prompt from contracts/notion-schema.md; return `TagResponse` (3–8 tags, ≤30 chars each, Title Case); return typed errors
-- [ ] T038 [P] [US3] Implement `/api/link-entries` Vercel Edge Function in `api/link-entries.ts`: accept `LinkEntriesRequest` (newEntryText, newEntryTags, existingEntries ≤50); call Claude with linking prompt from contracts/notion-schema.md; return `LinkEntriesResponse` (relatedPageIds ≤5); return typed errors
-- [ ] T039 [US3] Implement Notion database bootstrap in `src/services/notion.ts`: `ensureDatabase(accessToken)` — if `NotionAuthToken.journalDatabaseId` is set, verify it exists via `GET /v1/databases/:id`; if 404 or unset, create database at workspace root with all required properties from contracts/notion-schema.md schema; call `store/auth.setJournalDatabaseId()` with result; return `databaseId`
-- [ ] T040 [P] [US3] Implement block assembly algorithm in `src/services/notion.ts`: `assembleBlocks(ocrOutput: OCROutput): NotionBlock[]` — (1) split `text` at `paragraph_break` annotation positions; (2) for each segment: collect overlapping highlight and strikethrough annotations; emit callout block for highlighted sub-strings applying strikethrough as `annotations: { strikethrough: true }` within the callout when annotations overlap (highlight takes block-level precedence per spec); emit remaining text as paragraph blocks with inline strikethrough spans; (3) return ordered block array
-- [ ] T041 [P] [US3] Implement tagging service in `src/services/tagging.ts`: `extractTags(text)` — POST to `/api/tag`; return `string[]`
-- [ ] T042 [P] [US3] Implement entry linking service in `src/services/linking.ts`: `findRelatedEntries(newEntryText, newEntryTags, accessToken)` — fetch last 50 Notion pages from `journalDatabaseId` (`GET /v1/databases/:id/query`, sort by `Captured At` desc); serialize titles + tags; POST to `/api/link-entries`; return `relatedPageIds[]`
-- [ ] T043 [US3] Implement full publish orchestration in `src/pages/review.tsx`: on "Publish to Notion" — (1) `updateStatus('publishing')`; (2) run `extractTags` and `findRelatedEntries` in parallel; (3) call `ensureDatabase()`; (4) call `assembleBlocks()`; (5) generate page title via `generateEntryTitle(ocrOutput, capturedAt)`: format `{YYYY-MM-DD} — {first 50 chars of ocrOutput.text}` (per contracts/notion-schema.md); (6) `POST /v1/pages` with all properties + blocks in single call per contracts/notion-schema.md atomicity contract; (7) on success: `setNotionPageId()` + `updateStatus('published')`; (8) on failure: `updateStatus('failed')` + show error "Couldn't reach Notion. Your entry is saved — tap Retry when ready."; implement retry path: if `notionPageId` is set (partial prior attempt) use `PATCH /v1/pages/:id` instead of POST to avoid duplicates
-- [ ] T044 [US3] Implement `PendingEntryBanner` in `src/components/common/PendingEntryBanner.tsx`: on app load — (1) transition any `'ocr_pending'` entries to `'ocr_failed'` (app was closed mid-OCR; image is gone, retry means re-capture); (2) transition any `'publishing'` entries to `'failed'` (app was closed mid-publish; ocrOutput and tags are preserved, retry re-runs publish only); (3) call `store/pending.cleanupPublishedEntries()` (24h cleanup); (4) query for `'failed'` and `'ocr_failed'` entries and render banner "N entries waiting" if any exist; for `'failed'`: "Retry" re-runs publish from T043 skipping already-computed tags/links; for `'ocr_failed'`: "Retry" means user must re-capture (surface appropriate message); mount banner in root layout
-- [ ] T045 [US3] Create stub `/api/auth/refresh.ts` Edge Function that returns `501 Not Implemented` with comment explaining Notion tokens do not expire; file must exist for future use
+- [ ] T033 [P] [US3] Implement `POST /api/tag` Vercel Edge Function in `api/tag.ts`: validate `Authorization` header (401); truncate request `text` to first 2000 chars; call Anthropic `claude-opus-4-6` with tagging prompt from `contracts/notion-schema.md`; parse response as `string[]` (3–8 tags, Title Case, ≤ 30 chars each); return `TagResponse { tags, processingMs }`; on parse failure return `{ tags: [], processingMs }` (graceful degradation — tagging failure must not block publish); `export const config = { runtime: 'edge' }`
+- [ ] T034 [P] [US3] Implement `POST /api/link-entries` Vercel Edge Function in `api/link-entries.ts`: validate `Authorization` header (401); serialize `existingEntries` as compact list per linking prompt in `contracts/notion-schema.md`; call Claude with `claude-opus-4-6`; parse response as `string[]` of Notion page IDs (cap at 5); return `LinkEntriesResponse { relatedPageIds, processingMs }`; on any error return `{ relatedPageIds: [], processingMs }` (graceful — linking failure must not block publish); `export const config = { runtime: 'edge' }`
+- [ ] T035 [P] [US3] Implement tagging service in `src/services/tagging.ts`: export `extractTags(text: string, accessToken: string): Promise<string[]>` — POST `{ text }` to `/api/tag` with Bearer token; return `tags` array; on error return `[]`
+- [ ] T036 [P] [US3] Implement entry linking service in `src/services/linking.ts`: export `findRelatedEntries(newEntryText: string, newEntryTags: string[], accessToken: string, databaseId: string): Promise<string[]>` — fetch last 50 pages from `https://api.notion.com/v1/databases/{databaseId}/query` (sort `Captured At` desc, `page_size: 50`); map results to `{ notionPageId, title, tags, capturedAt }`; POST to `/api/link-entries`; return `relatedPageIds`; on any error return `[]`
+- [ ] T037 [US3] Implement Notion service in `src/services/notion.ts`: export `ensureDatabase(accessToken: string): Promise<string>` — read `NotionAuthToken.journalDatabaseId` from IndexedDB; if present, call `GET https://api.notion.com/v1/databases/{id}` to verify; on 404 or absent, create "Inkwell Journal" database at workspace root via `POST /v1/databases` with all properties from `contracts/notion-schema.md` (`Title`, `Captured At` date, `Tags` multi_select, `Related Entries` self-referential relation, `Word Count` number, `Calibration Version` number); call `setJournalDatabaseId()` with new ID; return database ID; export `assembleBlocks(ocrOutput: OCROutput): object[]` — implement block assembly algorithm from `contracts/notion-schema.md`: (1) split `ocrOutput.text` into segments at `paragraph_break` positions; (2) for each segment collect overlapping highlight and strikethrough annotations; (3) for each highlight: emit callout block (`type: 'callout'`, `icon: { emoji: '🖊️' }`, `color: 'yellow_background'`) with the highlighted text as rich_text; if a strikethrough overlaps the same range apply `annotations: { strikethrough: true }` within the callout rich_text span — do NOT emit a separate strikethrough paragraph for that range; (4) emit remaining text as paragraph blocks with inline strikethrough annotations where applicable; (5) return ordered block array; export `generateTitle(ocrOutput: OCROutput, capturedAt: number): string` — format `{YYYY-MM-DD} — {first 50 chars of ocrOutput.text}` using `new Date(capturedAt).toISOString().slice(0, 10)`
+- [ ] T038 [US3] Wire full publish flow into review page in `src/pages/review.tsx`: replace the "Publishing coming soon" placeholder from T026 with real orchestration — on "Confirm & Publish": (1) `updateStatus(id, 'confirmed')` then `updateStatus(id, 'publishing')`; (2) read auth token; (3) run `extractTags(text, token)` and `findRelatedEntries(text, tags, token, dbId)` in parallel via `Promise.all()`; (4) call `ensureDatabase(token)`; (5) call `assembleBlocks(ocrOutput)` + `generateTitle()`; (6) `POST https://api.notion.com/v1/pages` with all properties + block children in single call per atomicity contract in `contracts/notion-schema.md`; (7) on success: call `setNotionPageId(id, pageId)` + `updateStatus(id, 'published')` + show "Published to Notion ✓" success state; (8) on Notion 401: call `clearToken()` + navigate to `/onboarding/auth`; (9) on any other failure: `updateStatus(id, 'failed')` + show error "Couldn't reach Notion. Your entry is saved — tap Retry when ready." with retry button; retry path re-uses existing `ocrOutput.text` for tags and skips re-linking (stale relation links acceptable per quickstart Scenario 3); if `PendingEntry.notionPageId` is already set from a prior partial attempt use `PATCH /v1/pages/{id}` instead of POST to prevent duplicate pages
+- [ ] T039 [P] [US3] Stub `GET /api/auth/refresh` in `api/auth/refresh.ts`: return `{ status: 501, body: JSON.stringify({ message: 'Notion tokens do not expire; refresh not required in MVP' }) }`; `export const config = { runtime: 'edge' }`
 
-**Checkpoint**: Full capture → OCR → review → publish → Notion page created flow works end-to-end. Failed publishes surface in `PendingEntryBanner` and retry successfully.
+**Checkpoint**: Full capture → OCR → review → publish → Notion page created flow works end-to-end. Failed publishes surface in banner and retry successfully without re-capture.
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: PWA installability, error boundary wiring, integration test scaffolding, and performance validation.
+**Purpose**: Recovery UI, PWA assets, error wiring, and build validation.
 
-- [ ] T046 [P] Generate final PWA icon set (192×192, 512×512, maskable variants) and update `public/manifest.json`; verify Lighthouse PWA audit passes installability checks
-- [ ] T047 [P] Wire `ErrorBoundary` around `/capture` and `/review` routes in the React Router layout; add fallback UI with "Go back" reset action
-- [ ] T048 Write integration test scaffolding for all 4 quickstart scenarios in `tests/integration/publish-flow.test.ts` using Vitest with mocked Notion API and mocked Claude responses; scenarios must match quickstart.md observable outcomes exactly
-- [ ] T049 [P] Write Playwright E2E test in `tests/e2e/auth.spec.ts`: OAuth initiation → callback handler → CSRF state validation → token stored → calibration screen shown
-- [ ] T050 [P] Write Playwright E2E test in `tests/e2e/publish.spec.ts`: authenticated + calibrated user → camera capture → OCR review → publish → Notion sandbox page created with correct properties
-- [ ] T051 Validate SC-001 (capture-to-publish ≤90s) on a throttled mobile viewport in Playwright; measure OCR response time (target p95 ≤10s) and Notion page creation (target p95 ≤3s); document results
+- [ ] T040 [P] Build `PendingEntryBanner` component in `src/components/common/PendingEntryBanner.tsx`: on mount: (1) transition any `'ocr_pending'` entries to `'ocr_failed'` (app was killed mid-OCR, blob is gone — user must re-capture); (2) transition any `'publishing'` entries to `'failed'` (app killed mid-publish, `ocrOutput` preserved); (3) call `cleanupPublishedEntries()`; (4) query `getFailedEntries()`; if any: render banner "N entries waiting to publish — tap to resume"; tapping navigates to `/review?id={oldest.id}`; re-queries on `visibilitychange` (user returns to tab); export as default
+- [ ] T041 [P] Wire `PendingEntryBanner` into capture page in `src/pages/capture.tsx`: replace the stub import with the real component from T040; render `<PendingEntryBanner />` above `<CameraCapture />`
+- [ ] T042 [P] Wire `ErrorBoundary` around route-level components in `src/App.tsx`: wrap each `<Route element>` in `<ErrorBoundary>`; confirm the fallback renders correctly when an unhandled error is thrown in a route subtree
+- [ ] T043 [P] Add PWA icon assets in `public/icons/`: create `icon-192.png` (192×192) and `icon-512.png` (512×512) placeholder icons — simple SVG-to-PNG with black background and white "IW" text; add `icon-512-maskable.png` with safe-zone padding for maskable icon spec; update `public/manifest.json` icons array to reference all three with correct `sizes` and `purpose` fields
+- [ ] T044 Scaffold Playwright E2E test stubs: create `tests/e2e/auth.spec.ts` with `test.todo('OAuth redirect returns token in hash and stores it in IndexedDB')` and `test.todo('CSRF state mismatch is rejected')`; create `tests/e2e/publish.spec.ts` with `test.todo('confirmed entry publishes to Notion and status transitions to published')`; configure `playwright.config.ts` with `baseURL: 'http://localhost:3000'` and `webServer: { command: 'vercel dev', port: 3000 }`
+- [ ] T045 Run `npm run typecheck` and `npm run build` to harden types across all files; fix any TypeScript errors; confirm `vite build` produces `dist/` with `manifest.webmanifest` and a valid service worker; confirm `vercel dev` serves frontend + all `api/` Edge Functions without 500 errors on cold start
 
 ---
 
@@ -128,64 +124,19 @@
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: No dependencies — start immediately
-- **Foundational (Phase 2)**: Depends on Phase 1 completion — **BLOCKS all user stories**
-- **US1 (Phase 3)**: Depends on Phase 2 completion — no dependency on US2 or US3
-- **US2 (Phase 4)**: Depends on Phase 2 + US1 camera component (T021) — reuses `CameraCapture` for sample collection
-- **US3 (Phase 5)**: Depends on Phase 2 + US1 `PendingEntry` flow (T022, T025) — extends the publish trigger stubbed in T025
-- **Polish (Phase 6)**: Depends on US1 + US2 + US3 all complete
+- **Foundational (Phase 2)**: Depends on Phase 1 — **BLOCKS all user stories; auth flow must be complete before the route guard can redirect correctly**
+- **US1 (Phase 3)**: Depends on Phase 2 — independent of US2 and US3
+- **US2 (Phase 4)**: Depends on Phase 2 + T019 (`camera.ts`, from US1) — `SampleCapture` reuses camera abstraction; if implementing US2 before US1 stub `camera.ts` temporarily
+- **US3 (Phase 5)**: Depends on Phase 2 + US1 `PendingEntry` flow (T023, T026) — publish flow extends the review page built in US1
+- **Polish (Phase 6)**: Depends on all stories complete
 
-### User Story Dependencies
+### Within Each User Story
 
-- **US1 → US2**: `OnboardingFlow` reuses `CameraCapture` (T021); `ocr.ts` (T020) is updated in T032 to inject hints
-- **US1 → US3**: Publish flow in `review.tsx` (T025) is stubbed in US1 and fully wired in T043
-- **US2 → US3**: `CalibrationHints` (T027) used in every OCR call; no direct US3 dependency on US2 internals
-
-### Parallel Opportunities Within Each Phase
-
-**Phase 1**: T002–T009 all parallelizable after T001.
-
-**Phase 2**: T012, T013, T014, T016 fully parallel after T011. T017 parallel with all store tasks.
-
-**Phase 3 (US1)**:
-```
-T018 (OCR Edge Function)    ← parallel with T019, T021
-T019 (image.ts)             ← parallel with T018, T021
-T021 (CameraCapture)        ← parallel with T018, T019
-           ↓ all complete
-T020 (ocr service)          ← depends on T018, T019
-T022 (capture page)         ← depends on T020, T021
-T023 (OcrReviewScreen)      ← parallel with T022 (different file)
-T024 (correction recording) ← parallel with T022, T023
-           ↓ all complete
-T025 (review page)          ← depends on T022, T023, T024
-```
-
-**Phase 4 (US2)**:
-```
-T026 (analyze-handwriting Edge Function)  ← parallel with T027, T028
-T027 (CalibrationHints serializer update) ← parallel with T026, T028
-T028 (SampleCapture component)            ← parallel with T026, T027
-           ↓ all complete
-T029 (OnboardingFlow)    ← depends on T028
-T030 (analysis service)  ← depends on T026, T027
-           ↓ both complete
-T031 (calibration page)  ← depends on T029, T030
-T032 (update ocr.ts)     ← depends on T027; parallel with T031
-```
-
-**Phase 5 (US3)**:
-```
-T033 (auth callback)  T034 (auth lib)  T037 (tag Edge Fn)  T038 (link Edge Fn)  T040 (block assembly)
-        ↓                  ↓                  ↓                    ↓
-T035 (NotionConnect)  T036 (auth page)  T041 (tagging svc)  T042 (linking svc)
-                           ↓ auth complete
-                      T039 (DB bootstrap)
-                           ↓ all services complete
-                      T043 (publish orchestration)
-                           ↓
-                      T044 (PendingEntryBanner)
-T045 (auth/refresh stub) ← fully parallel, no dependencies
-```
+| Story | Parallel batch 1 | Then sequential |
+|---|---|---|
+| US1 | T019 (`camera.ts`), T020 (`image.ts`), T021 (`api/ocr.ts`) | T022 (ocr service) → T023 (CameraCapture) + T024 (OcrReviewScreen) → T025 (capture page) → T026 (review page) |
+| US2 | T027 (`api/analyze-handwriting.ts`), T030 (`SampleCapture`) | T028 (calibration service) → T031 (OnboardingFlow) → T032 (calibration page); T029 (update ocr.ts) in parallel with T031 |
+| US3 | T033 (`api/tag.ts`), T034 (`api/link-entries.ts`), T035 (tagging svc), T036 (linking svc), T039 (auth/refresh stub) | T037 (notion service) → T038 (wire review page) |
 
 ---
 
@@ -193,27 +144,29 @@ T045 (auth/refresh stub) ← fully parallel, no dependencies
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational
-3. Complete Phase 3: User Story 1 (T018–T025)
-4. **STOP and VALIDATE**: Capture a real handwritten page, verify `OCROutput` structure, test inline correction flow
-5. Deploy to Vercel preview URL, test on iOS and Android
+1. Complete Phase 1 (Setup)
+2. Complete Phase 2 (Foundational) — app shell + auth flow + IndexedDB
+3. Complete Phase 3 (US1) — camera + OCR + review
+4. **STOP and VALIDATE**: photograph a real handwritten page, verify structured `OCROutput`, make a correction, inspect IndexedDB state
+5. Deploy preview: `vercel deploy` → share URL, test on iOS Safari and Android Chrome
 
 ### Incremental Delivery
 
-1. Setup + Foundational → project shell boots, routing works
-2. **US1 complete** → camera capture + formatting OCR + review screen (shippable data pipeline)
-3. **US2 complete** → calibration onboarding + handwriting profile improves OCR from first real capture
-4. **US3 complete** → Notion publishing + tagging + relations = full product loop
-5. Polish → PWA installable, E2E tests pass, performance validated
+1. **Setup + Foundational** → app boots, OAuth works
+2. **+ US1** → camera capture + formatting OCR + correction recording (data pipeline shippable)
+3. **+ US2** → calibration onboarding; first real capture includes `HandwritingProfile` hints
+4. **+ US3** → Notion publishing + auto-tagging + entry relations = full product loop closed
+5. **+ Polish** → PWA installable, recovery banner live, build validated
 
 ---
 
-## Notes
+## Constitution Check
 
-- `[P]` tasks operate on different files with no shared incomplete dependencies — safe to parallelize
-- Every user story is independently testable at its checkpoint without requiring later stories
-- `PendingEntry` is created before the OCR call (T022) — no capture is silently lost on API failure
-- The publish flow (T043) re-uses already-computed tags/links on retry — never re-charges API calls for data already in the `PendingEntry`
-- The `<input capture>` iOS path (T017) and `getUserMedia` Android/desktop path produce identical `File | Blob` output — the OCR pipeline never needs to know which camera path was used
-- Commit after each task or logical group; each phase checkpoint is a valid deploy point
+| Principle | Enforced by |
+|---|---|
+| I. Formatting semantics are the product | T009 (`FormattingAnnotation` type), T021 (OCR prompt contract enforces `formatting[]`), T037 (block assembly: callout for highlights, inline strikethrough — not merged with plain text) |
+| II. Calibration is first-class | T013 (`CalibrationProfile` store), T027–T032 (onboarding flow + analysis), T028 (OCR service injects hints on every call), T024 (corrections recorded on every inline edit) |
+| III. Notion is the database | T012 (`PendingEntry` deleted post-publish), T037 (no content stored in proxy or Blob in MVP) |
+| IV. Every entry feeds the knowledge graph | T038 (`extractTags` + `findRelatedEntries` run atomically before Notion page creation; failures surface as errors, not silent drops) |
+| V. PWA-only | T005 (vite-plugin-pwa), T019 (`getUserMedia` / `input capture` — no Capacitor) |
+| VI. MVP scope is fixed | `DoodleRegion` and `EditorialSymbol` defined in T009 but never instantiated; `doodles: []` and `symbols: []` hardcoded in OCR prompt (T021); no doodle upload endpoint |
